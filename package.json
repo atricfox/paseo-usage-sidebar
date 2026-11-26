@@ -1,7 +1,7 @@
 {
   "name": "paseo-usage-sidebar",
-  "version": "0.1.0",
-  "description": "Show provider account quotas, DeepSeek balance, OpenCode spend, and Antigravity limits in the sidebar with a detail screen.",
+  "version": "0.2.0",
+  "description": "Show provider account quotas, multi-account Antigravity limits, DeepSeek balance, OpenCode spend, and Pi status in the sidebar with a detail screen.",
   "license": "MIT",
   "repository": {
     "type": "git",

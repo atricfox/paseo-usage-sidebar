@@ -205,11 +205,15 @@ export function createPiUsageHandler(
 
     const providers: PiConfiguredProvider[] = Object.entries(store.data)
       .filter(([, value]) => value != null)
-      .map(([id, value]) => ({
-        id,
-        authType: classifyPiEntry(value),
-        coveredByPaseoBuiltin: PASEO_BUILTIN_PI_PROVIDERS.has(id.toLowerCase()),
-      }))
+      .map(([id, value]) => {
+        const authType = classifyPiEntry(value);
+        return {
+          id,
+          authType,
+          coveredByPaseoBuiltin:
+            authType === "oauth" && PASEO_BUILTIN_PI_PROVIDERS.has(id.toLowerCase()),
+        };
+      })
       .sort((a, b) => a.id.localeCompare(b.id));
 
     let openRouter: PiOpenRouterCredits | null = null;
@@ -217,20 +221,22 @@ export function createPiUsageHandler(
       ([id]) => id.toLowerCase() === "openrouter",
     );
     if (openRouterKeyEntry) {
-      let reuseCreds = false;
+      let reusePiCredentials = false;
       try {
         const state = await settings.read();
         if (state.status === "ready") {
-          reuseCreds = state.values.reuseOpenCodeCredentials;
+          reusePiCredentials = state.values.reusePiCredentials;
         }
       } catch {
         // Keep opt-in default false.
       }
-      const key = reuseCreds ? extractApiKeyFromEntry(openRouterKeyEntry[1]) : null;
-      if (!reuseCreds) {
+      if (!reusePiCredentials) {
         openRouter = { status: "opt_in_required" };
-      } else if (key) {
-        openRouter = await fetchOpenRouterCredits(key);
+      } else {
+        const key = extractApiKeyFromEntry(openRouterKeyEntry[1]);
+        if (key) {
+          openRouter = await fetchOpenRouterCredits(key);
+        }
       }
     }
 

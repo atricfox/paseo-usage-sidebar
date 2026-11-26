@@ -1,7 +1,4 @@
-import {
-  useTranslation,
-  type PluginScreenProps,
-} from "@getpaseo/plugin/client";
+import type { PluginScreenProps } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
@@ -13,6 +10,7 @@ import type {
   OpenCodeLocalErrorCode,
   OpenCodeLocalStats,
 } from "../shared/opencode";
+import type { PiOpenRouterCredits, PiUsageResult } from "../shared/pi";
 import {
   EXTENDED_SOURCE_IDS,
   providerVisibilityId,
@@ -33,23 +31,25 @@ import {
   toneToColor,
   type ProviderUsageItem,
 } from "./format";
-import { messages } from "./messages";
+import { usePluginI18n } from "./messages";
 import {
   useAgentUsageSummaryQuery,
   useAntigravityUsageQuery,
   useDeepSeekBalanceQuery,
   useOpenCodeUsageQuery,
+  usePiUsageQuery,
   useProviderUsageQuery,
   useUsageVisibility,
 } from "./use-usage-data";
 
 export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreenProps) {
-  const { t, locale } = useTranslation(messages);
+  const { t, locale } = usePluginI18n();
   const visibility = useUsageVisibility(host.id);
   const providersQuery = useProviderUsageQuery(host.id);
   const deepSeekQuery = useDeepSeekBalanceQuery(host.id);
   const openCodeQuery = useOpenCodeUsageQuery(host.id);
   const antigravityQuery = useAntigravityUsageQuery(host.id);
+  const piQuery = usePiUsageQuery(host.id);
   const agentsQuery = useAgentUsageSummaryQuery(host.id);
   const [manualRefreshing, setManualRefreshing] = useState(false);
 
@@ -62,6 +62,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
         deepSeekQuery.refetch(),
         openCodeQuery.refetch(),
         antigravityQuery.forceRefresh(),
+        piQuery.refetch(),
         agentsQuery.refetch(),
       ]);
     } finally {
@@ -73,6 +74,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     deepSeekQuery,
     manualRefreshing,
     openCodeQuery,
+    piQuery,
     providersQuery,
   ]);
 
@@ -82,6 +84,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     deepSeekQuery.isFetching ||
     openCodeQuery.isFetching ||
     antigravityQuery.isFetching ||
+    piQuery.isFetching ||
     agentsQuery.isFetching;
 
   const styles = useMemo(
@@ -398,7 +401,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
   const deepSeekSourceLabel = (source: "env" | "config" | "opencode" | "pi" | undefined): string | null => {
     switch (source) {
       case "pi":
-        return "Pi";
+        return t("sources.pi");
       case "env":
         return t("sources.env");
       case "config":
@@ -415,7 +418,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
   ): string | null => {
     switch (source) {
       case "pi":
-        return "Pi";
+        return t("sources.pi");
       case "env":
         return t("sources.env");
       case "config":
@@ -509,12 +512,37 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     }
   };
 
+  const formatPiOpenRouterError = (
+    credits: Extract<PiOpenRouterCredits, { status: "error" }>,
+  ): string => {
+    switch (credits.code) {
+      case "auth_failed":
+        return t("pi.openRouterAuthErr", { status: credits.httpStatus ?? 401 });
+      case "http_error":
+        return t("pi.openRouterHttpErr", { status: credits.httpStatus ?? 500 });
+      case "unexpected_schema":
+        return t("pi.openRouterSchemaErr");
+      case "timeout":
+        return t("pi.openRouterTimeoutErr");
+      case "network_error":
+        return t("pi.openRouterNetworkErr");
+    }
+  };
+
   const nowMs = Date.now();
   const focusParam = params.focus ?? null;
   const allProviders = providersQuery.data?.providers ?? [];
   const hasBuiltInOpenCodeGo = allProviders.some(
     (item) => item.providerId.toLowerCase() === "opencode-go",
   );
+  const hasBuiltInClaude = allProviders.some(
+    (item) => item.providerId.toLowerCase() === "claude",
+  );
+  const showClaudeUnconfiguredCard =
+    !providersQuery.isPending &&
+    !providersQuery.isError &&
+    !hasBuiltInClaude &&
+    !visibility.isHidden(providerVisibilityId("claude"));
   const visibleProviders = allProviders.filter(
     (item) => !visibility.isHidden(providerVisibilityId(item.providerId)),
   );
@@ -523,7 +551,8 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     providersQuery.data?.fetchedAt ??
       deepSeekQuery.data?.fetchedAt ??
       openCodeQuery.data?.fetchedAt ??
-      antigravityQuery.data?.[0]?.quota.fetchedAt,
+      antigravityQuery.data?.[0]?.quota.fetchedAt ??
+      piQuery.data?.fetchedAt,
   );
 
   const renderHideButton = (visibilityId: string, displayName: string) =>
@@ -542,10 +571,12 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
 
   const hiddenItemLabels = useMemo(() => {
     const labelMap = new Map<string, string>([
+      [providerVisibilityId("claude"), t("claude.title")],
       [EXTENDED_SOURCE_IDS.deepseek, t("deepseek.title")],
       [EXTENDED_SOURCE_IDS.opencodeGo, t("opencodeGo.title")],
       [EXTENDED_SOURCE_IDS.opencode, t("opencodeLocal.title")],
       [EXTENDED_SOURCE_IDS.antigravity, t("antigravity.title")],
+      [EXTENDED_SOURCE_IDS.pi, t("pi.title")],
     ]);
     for (const item of allProviders) {
       const { sourceName } = resolveProviderLabels(item);
@@ -1134,6 +1165,242 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     );
   };
 
+  const renderClaudeUnconfiguredCard = () => {
+    if (!showClaudeUnconfiguredCard) return null;
+    const isFocused = focusParam === "claude-unconfigured";
+    const claudeAgents = agentsQuery.data?.byProvider.claude;
+
+    return (
+      <View
+        key="claude-unconfigured"
+        style={[styles.card, isFocused ? styles.cardFocused : null]}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleGroup}>
+            <Icon name="Gauge" size={16} color={theme.colors.foreground} />
+            <Text style={styles.cardTitle}>{t("claude.title")}</Text>
+            <View style={styles.pill}>
+              <Text style={styles.pillText}>{t("claude.noReportPill")}</Text>
+            </View>
+          </View>
+          <View style={styles.cardHeaderActions}>
+            <Text style={[styles.statusText, { color: theme.colors.statusWarning }]}>
+              {t("common.unconfigured")}
+            </Text>
+            {renderHideButton(providerVisibilityId("claude"), t("claude.title"))}
+          </View>
+        </View>
+
+        <View style={styles.metaRow}>
+          <Text style={styles.metaText}>{t("screen.sourceIdMeta", { id: "claude" })}</Text>
+        </View>
+
+        <View style={styles.guideBox}>
+          <Text style={styles.guideTitle}>{t("claude.unconfiguredTitle")}</Text>
+          <Text style={styles.guideLine}>{t("claude.unconfiguredIntro")}</Text>
+          <Text style={styles.guideLine}>{t("claude.oauthVsApiNote")}</Text>
+          <Text style={styles.guideLine}>{t("claude.hideHint")}</Text>
+        </View>
+
+        {claudeAgents && claudeAgents.totalObservedAgents > 0 ? (
+          <View style={styles.blockGroup}>
+            <Text style={styles.blockHeader}>{t("claude.sessionsHeader")}</Text>
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>
+                {t("claude.sessionsSummary", {
+                  running: claudeAgents.runningCount,
+                  idle: claudeAgents.idleCount,
+                })}
+              </Text>
+              <Text style={styles.kvValue}>
+                {formatCompactNumber(claudeAgents.totalTokens)} tok
+              </Text>
+            </View>
+            {claudeAgents.totalCostUsd > 0 ? (
+              <Text style={styles.metaText}>
+                {t("claude.sessionsCost", {
+                  cost: formatUsdCompact(claudeAgents.totalCostUsd),
+                })}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const renderPiCard = (result: PiUsageResult | undefined) => {
+    if (visibility.isHidden(EXTENDED_SOURCE_IDS.pi)) return null;
+    const isFocused = focusParam === EXTENDED_SOURCE_IDS.pi;
+    const piAgents = agentsQuery.data?.byProvider.pi;
+
+    const statusBadge =
+      piQuery.isPending && !result
+        ? { label: t("common.loading"), color: theme.colors.foregroundMuted }
+        : piQuery.isError
+          ? { label: t("common.requestFailed"), color: theme.colors.statusDanger }
+          : result?.status === "available"
+            ? { label: t("common.available"), color: theme.colors.statusSuccess }
+            : result?.status === "not_found"
+              ? { label: t("common.notConfigured"), color: theme.colors.statusWarning }
+              : { label: t("common.error"), color: theme.colors.statusDanger };
+
+    const authTypeLabel = (authType: "oauth" | "api_key" | "other"): string => {
+      switch (authType) {
+        case "oauth":
+          return t("pi.authOauth");
+        case "api_key":
+          return t("pi.authApiKey");
+        case "other":
+          return t("pi.authOther");
+      }
+    };
+
+    return (
+      <View style={[styles.card, isFocused ? styles.cardFocused : null]}>
+        <View style={styles.cardHeader}>
+          <View style={styles.cardTitleGroup}>
+            <Icon name="Terminal" size={16} color={theme.colors.foreground} />
+            <Text style={styles.cardTitle}>{t("pi.title")}</Text>
+            {result?.status === "available" ? (
+              <View style={styles.pill}>
+                <Text style={styles.pillText}>
+                  {t("pi.providersCount", { count: result.providers.length })}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <View style={styles.cardHeaderActions}>
+            <Text style={[styles.statusText, { color: statusBadge.color }]}>
+              {statusBadge.label}
+            </Text>
+            {renderHideButton(EXTENDED_SOURCE_IDS.pi, t("pi.title"))}
+          </View>
+        </View>
+
+        {result ? (
+          <View style={styles.metaRow}>
+            <Text style={styles.metaText}>
+              {t("pi.authStoreMeta", { path: result.authPathDisplay })}
+            </Text>
+            <Text style={styles.metaText}>
+              {t("screen.fetchedMeta", {
+                time: formatLocalDateTime(result.fetchedAt) ?? "",
+              })}
+            </Text>
+          </View>
+        ) : null}
+
+        {piQuery.isError ? (
+          <Text style={styles.errorText}>
+            {t("pi.rpcFailed", {
+              error:
+                piQuery.error instanceof Error
+                  ? piQuery.error.message
+                  : String(piQuery.error),
+            })}
+          </Text>
+        ) : result?.status === "available" ? (
+          <>
+            <View style={styles.blockGroup}>
+              <Text style={styles.blockHeader}>{t("pi.configuredHeader")}</Text>
+              {result.providers.length === 0 ? (
+                <Text style={styles.metaText}>{t("pi.noProviders")}</Text>
+              ) : (
+                result.providers.map((provider) => (
+                  <View key={provider.id} style={styles.kvRow}>
+                    <Text style={styles.kvLabel}>{provider.id}</Text>
+                    <Text style={styles.kvValue}>
+                      {provider.coveredByPaseoBuiltin
+                        ? `${authTypeLabel(provider.authType)} · ${t("pi.coveredByBuiltin")}`
+                        : authTypeLabel(provider.authType)}
+                    </Text>
+                  </View>
+                ))
+              )}
+              <Text style={styles.metaText}>{t("pi.builtinHint")}</Text>
+            </View>
+
+            {result.openRouter ? (
+              <View style={styles.blockGroup}>
+                <Text style={styles.blockHeader}>{t("pi.openRouterHeader")}</Text>
+                {result.openRouter.status === "available" ? (
+                  <View style={styles.balanceRow}>
+                    <View style={styles.windowTopRow}>
+                      <Text style={styles.windowLabel}>{t("pi.openRouterRemaining")}</Text>
+                      <Text
+                        style={[
+                          styles.balancePrimary,
+                          {
+                            color:
+                              result.openRouter.remainingUsd > 0
+                                ? theme.colors.statusSuccess
+                                : theme.colors.statusDanger,
+                          },
+                        ]}
+                      >
+                        {`$${result.openRouter.remainingUsd.toFixed(2)}`}
+                      </Text>
+                    </View>
+                    <Text style={styles.metaText}>
+                      {t("pi.openRouterBreakdown", {
+                        total: `$${result.openRouter.totalCreditsUsd.toFixed(2)}`,
+                        used: `$${result.openRouter.usedUsd.toFixed(2)}`,
+                      })}
+                    </Text>
+                  </View>
+                ) : result.openRouter.status === "opt_in_required" ? (
+                  <Text style={styles.metaText}>{t("pi.openRouterOptIn")}</Text>
+                ) : (
+                  <Text style={styles.errorText}>
+                    {formatPiOpenRouterError(result.openRouter)}
+                  </Text>
+                )}
+              </View>
+            ) : null}
+          </>
+        ) : result?.status === "not_found" ? (
+          <View style={styles.guideBox}>
+            <Text style={styles.guideTitle}>{t("pi.notFoundTitle")}</Text>
+            <Text style={styles.guideLine}>
+              {t("pi.notFoundGuide", { path: result.authPathDisplay })}
+            </Text>
+          </View>
+        ) : result?.status === "error" ? (
+          <Text style={styles.errorText}>
+            {result.code === "invalid_json"
+              ? t("pi.errInvalidJson", { path: result.authPathDisplay })
+              : t("pi.errReadFailed", { path: result.authPathDisplay })}
+          </Text>
+        ) : null}
+
+        {piAgents && piAgents.totalObservedAgents > 0 ? (
+          <View style={styles.blockGroup}>
+            <Text style={styles.blockHeader}>{t("pi.sessionsHeader")}</Text>
+            <View style={styles.kvRow}>
+              <Text style={styles.kvLabel}>
+                {t("pi.sessionsSummary", {
+                  running: piAgents.runningCount,
+                  idle: piAgents.idleCount,
+                })}
+              </Text>
+              <Text style={styles.kvValue}>
+                {formatCompactNumber(piAgents.totalTokens)} tok
+              </Text>
+            </View>
+            {piAgents.totalCostUsd > 0 ? (
+              <Text style={styles.metaText}>
+                {t("pi.sessionsCost", {
+                  cost: formatUsdCompact(piAgents.totalCostUsd),
+                })}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
@@ -1185,190 +1452,193 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
             })}
           </Text>
         </View>
-      ) : visibleProviders.length === 0 ? (
+      ) : visibleProviders.length === 0 && !showClaudeUnconfiguredCard ? (
         <View style={styles.card}>
           <Text style={styles.metaText}>
-            {allProviders.length > 0
+            {allProviders.length > 0 || visibility.isHidden(providerVisibilityId("claude"))
               ? t("screen.allBuiltinHidden")
               : t("screen.noBuiltinProviders")}
           </Text>
         </View>
       ) : (
-        visibleProviders.map((provider, index) => {
-          const key = providerFocusKey(provider, index);
-          const isFocused = focusParam === key;
-          const badge = statusMeta(provider.status);
-          const { sourceName, accountLabel } = resolveProviderLabels(provider);
-          const visId = providerVisibilityId(provider.providerId);
-          const windows = provider.windows ?? [];
-          const balances = provider.balances ?? [];
-          const details = provider.details ?? [];
+        <>
+          {visibleProviders.map((provider, index) => {
+            const key = providerFocusKey(provider, index);
+            const isFocused = focusParam === key;
+            const badge = statusMeta(provider.status);
+            const { sourceName, accountLabel } = resolveProviderLabels(provider);
+            const visId = providerVisibilityId(provider.providerId);
+            const windows = provider.windows ?? [];
+            const balances = provider.balances ?? [];
+            const details = provider.details ?? [];
 
-          return (
-            <View key={key} style={[styles.card, isFocused ? styles.cardFocused : null]}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardTitleGroup}>
-                  <Icon name="Gauge" size={16} color={theme.colors.foreground} />
-                  <Text style={styles.cardTitle}>{sourceName}</Text>
-                  {provider.planLabel ? (
-                    <View style={styles.pill}>
-                      <Text style={styles.pillText}>{provider.planLabel}</Text>
-                    </View>
+            return (
+              <View key={key} style={[styles.card, isFocused ? styles.cardFocused : null]}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardTitleGroup}>
+                    <Icon name="Gauge" size={16} color={theme.colors.foreground} />
+                    <Text style={styles.cardTitle}>{sourceName}</Text>
+                    {provider.planLabel ? (
+                      <View style={styles.pill}>
+                        <Text style={styles.pillText}>{provider.planLabel}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={styles.cardHeaderActions}>
+                    <Text style={[styles.statusText, { color: badge.color }]}>{badge.label}</Text>
+                    {renderHideButton(visId, sourceName)}
+                  </View>
+                </View>
+
+                <View style={styles.metaRow}>
+                  {accountLabel ? (
+                    <Text style={styles.metaText}>
+                      {t("screen.accountMeta", { account: accountLabel })}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.metaText}>
+                    {t("screen.sourceIdMeta", { id: provider.providerId })}
+                  </Text>
+                  {provider.fetchedAt ? (
+                    <Text style={styles.metaText}>
+                      {t("screen.fetchedMeta", {
+                        time: formatLocalDateTime(provider.fetchedAt) ?? "",
+                      })}
+                    </Text>
+                  ) : null}
+                  {provider.nextRefreshAt ? (
+                    <Text style={styles.metaText}>
+                      {t("screen.nextRefreshMeta", {
+                        time: formatLocalDateTime(provider.nextRefreshAt) ?? "",
+                      })}
+                    </Text>
                   ) : null}
                 </View>
-                <View style={styles.cardHeaderActions}>
-                  <Text style={[styles.statusText, { color: badge.color }]}>{badge.label}</Text>
-                  {renderHideButton(visId, sourceName)}
-                </View>
-              </View>
 
-              <View style={styles.metaRow}>
-                {accountLabel ? (
-                  <Text style={styles.metaText}>
-                    {t("screen.accountMeta", { account: accountLabel })}
+                {provider.error ? (
+                  <Text
+                    style={
+                      provider.status === "unavailable" ? styles.warningText : styles.errorText
+                    }
+                  >
+                    {provider.error}
                   </Text>
                 ) : null}
-                <Text style={styles.metaText}>
-                  {t("screen.sourceIdMeta", { id: provider.providerId })}
-                </Text>
-                {provider.fetchedAt ? (
-                  <Text style={styles.metaText}>
-                    {t("screen.fetchedMeta", {
-                      time: formatLocalDateTime(provider.fetchedAt) ?? "",
-                    })}
-                  </Text>
-                ) : null}
-                {provider.nextRefreshAt ? (
-                  <Text style={styles.metaText}>
-                    {t("screen.nextRefreshMeta", {
-                      time: formatLocalDateTime(provider.nextRefreshAt) ?? "",
-                    })}
-                  </Text>
-                ) : null}
-              </View>
 
-              {provider.error ? (
-                <Text
-                  style={
-                    provider.status === "unavailable" ? styles.warningText : styles.errorText
-                  }
-                >
-                  {provider.error}
-                </Text>
-              ) : null}
-
-              {windows.length > 0 ? (
-                <View style={styles.blockGroup}>
-                  <Text style={styles.blockHeader}>{t("screen.quotaWindows")}</Text>
-                  {windows.map((win) => {
-                    const remainingPct = resolveRemainingPct(win);
-                    const usedPct = resolveUsedPct(win);
-                    const fillColor = toneToColor(win.tone, theme, remainingPct);
-                    const countdown = formatResetCountdown(win.resetsAt, nowMs, "detailed", locale);
-                    const resetAt = formatLocalDateTime(win.resetsAt);
-                    return (
-                      <View key={win.id} style={styles.windowItem}>
-                        <View style={styles.windowTopRow}>
-                          <Text style={styles.windowLabel}>{win.label}</Text>
-                          <Text style={[styles.windowPct, { color: fillColor }]}>
-                            {remainingPct !== null
-                              ? t("screen.remainingPct", { pct: formatPercent(remainingPct) })
-                              : "--"}
-                          </Text>
-                        </View>
-                        {remainingPct !== null ? (
-                          <View style={styles.barTrack}>
-                            <View
-                              style={[
-                                styles.barFill,
-                                {
-                                  width: `${remainingPct}%`,
-                                  backgroundColor: fillColor,
-                                },
-                              ]}
-                            />
+                {windows.length > 0 ? (
+                  <View style={styles.blockGroup}>
+                    <Text style={styles.blockHeader}>{t("screen.quotaWindows")}</Text>
+                    {windows.map((win) => {
+                      const remainingPct = resolveRemainingPct(win);
+                      const usedPct = resolveUsedPct(win);
+                      const fillColor = toneToColor(win.tone, theme, remainingPct);
+                      const countdown = formatResetCountdown(win.resetsAt, nowMs, "detailed", locale);
+                      const resetAt = formatLocalDateTime(win.resetsAt);
+                      return (
+                        <View key={win.id} style={styles.windowItem}>
+                          <View style={styles.windowTopRow}>
+                            <Text style={styles.windowLabel}>{win.label}</Text>
+                            <Text style={[styles.windowPct, { color: fillColor }]}>
+                              {remainingPct !== null
+                                ? t("screen.remainingPct", { pct: formatPercent(remainingPct) })
+                                : "--"}
+                            </Text>
                           </View>
-                        ) : null}
-                        <View style={styles.windowMetaRow}>
-                          {usedPct !== null ? (
-                            <Text style={styles.metaText}>
-                              {t("screen.usedPct", { pct: formatPercent(usedPct) })}
-                            </Text>
+                          {remainingPct !== null ? (
+                            <View style={styles.barTrack}>
+                              <View
+                                style={[
+                                  styles.barFill,
+                                  {
+                                    width: `${remainingPct}%`,
+                                    backgroundColor: fillColor,
+                                  },
+                                ]}
+                              />
+                            </View>
                           ) : null}
-                          {countdown || resetAt ? (
-                            <Text style={styles.metaText}>
-                              {[countdown, resetAt ? `(${resetAt})` : null]
-                                .filter(Boolean)
-                                .join(" ")}
+                          <View style={styles.windowMetaRow}>
+                            {usedPct !== null ? (
+                              <Text style={styles.metaText}>
+                                {t("screen.usedPct", { pct: formatPercent(usedPct) })}
+                              </Text>
+                            ) : null}
+                            {countdown || resetAt ? (
+                              <Text style={styles.metaText}>
+                                {[countdown, resetAt ? `(${resetAt})` : null]
+                                  .filter(Boolean)
+                                  .join(" ")}
+                              </Text>
+                            ) : null}
+                          </View>
+                          {win.runsOutAt ? (
+                            <Text style={styles.warningText}>
+                              {t("screen.runsOutAt", {
+                                time: formatLocalDateTime(win.runsOutAt) ?? "",
+                              })}
                             </Text>
                           ) : null}
                         </View>
-                        {win.runsOutAt ? (
-                          <Text style={styles.warningText}>
-                            {t("screen.runsOutAt", {
-                              time: formatLocalDateTime(win.runsOutAt) ?? "",
-                            })}
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : null}
+                      );
+                    })}
+                  </View>
+                ) : null}
 
-              {balances.length > 0 ? (
-                <View style={styles.blockGroup}>
-                  <Text style={styles.blockHeader}>{t("screen.balances")}</Text>
-                  {balances.map((balance) => {
-                    const balanceColor = toneToColor(balance.tone, theme);
-                    const resetCountdown = formatResetCountdown(
-                      balance.resetsAt,
-                      nowMs,
-                      "detailed",
-                      locale,
-                    );
-                    return (
-                      <View key={balance.id} style={styles.balanceRow}>
-                        <View style={styles.windowTopRow}>
-                          <Text style={styles.windowLabel}>{balance.label}</Text>
-                          <Text style={[styles.windowPct, { color: balanceColor }]}>
-                            {formatBalanceDetailed(balance, locale)}
-                          </Text>
+                {balances.length > 0 ? (
+                  <View style={styles.blockGroup}>
+                    <Text style={styles.blockHeader}>{t("screen.balances")}</Text>
+                    {balances.map((balance) => {
+                      const balanceColor = toneToColor(balance.tone, theme);
+                      const resetCountdown = formatResetCountdown(
+                        balance.resetsAt,
+                        nowMs,
+                        "detailed",
+                        locale,
+                      );
+                      return (
+                        <View key={balance.id} style={styles.balanceRow}>
+                          <View style={styles.windowTopRow}>
+                            <Text style={styles.windowLabel}>{balance.label}</Text>
+                            <Text style={[styles.windowPct, { color: balanceColor }]}>
+                              {formatBalanceDetailed(balance, locale)}
+                            </Text>
+                          </View>
+                          {resetCountdown ? (
+                            <Text style={styles.metaText}>
+                              {resetCountdown} ({formatLocalDateTime(balance.resetsAt)})
+                            </Text>
+                          ) : null}
                         </View>
-                        {resetCountdown ? (
-                          <Text style={styles.metaText}>
-                            {resetCountdown} ({formatLocalDateTime(balance.resetsAt)})
-                          </Text>
-                        ) : null}
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : null}
+                      );
+                    })}
+                  </View>
+                ) : null}
 
-              {details.length > 0 ? (
-                <View style={styles.blockGroup}>
-                  <Text style={styles.blockHeader}>{t("screen.details")}</Text>
-                  {details.map((detail) => (
-                    <View key={detail.id} style={styles.kvRow}>
-                      <Text style={styles.kvLabel}>{detail.label}</Text>
-                      <Text
-                        style={[
-                          styles.kvValue,
-                          detail.tone
-                            ? { color: toneToColor(detail.tone, theme) }
-                            : null,
-                        ]}
-                      >
-                        {detail.value}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-            </View>
-          );
-        })
+                {details.length > 0 ? (
+                  <View style={styles.blockGroup}>
+                    <Text style={styles.blockHeader}>{t("screen.details")}</Text>
+                    {details.map((detail) => (
+                      <View key={detail.id} style={styles.kvRow}>
+                        <Text style={styles.kvLabel}>{detail.label}</Text>
+                        <Text
+                          style={[
+                            styles.kvValue,
+                            detail.tone
+                              ? { color: toneToColor(detail.tone, theme) }
+                              : null,
+                          ]}
+                        >
+                          {detail.value}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+          {renderClaudeUnconfiguredCard()}
+        </>
       )}
 
       <Text style={styles.sectionTitle}>{t("screen.sectionExtended")}</Text>
@@ -1376,6 +1646,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
       {renderOpenCodeGoCard(openCodeQuery.data?.go)}
       {renderOpenCodeLocalCard(openCodeQuery.data?.localStats)}
       {antigravityQuery.data ? antigravityQuery.data.map(renderAntigravityCard) : renderAntigravityCard()}
+      {renderPiCard(piQuery.data)}
 
       {hiddenItemLabels.length > 0 ? (
         <View style={styles.hiddenBar}>

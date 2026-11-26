@@ -115,6 +115,14 @@ function clampPercent(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+function normalizeResetTime(raw: string | null | undefined): string | null {
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  const timestamp = Date.parse(trimmed);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  return trimmed;
+}
+
 async function profiles(context: PluginHandlerContext) {
   // The mutable config RPC omits the daemon's provider launch definitions.
   const home = process.env.PASEO_HOME || join(homedir(), ".paseo");
@@ -256,7 +264,7 @@ async function fetchAntigravityUsageLive(
           description: bucket.description,
           remainingPct,
           usedPct: clampPercent(100 - remainingPct),
-          resetsAt: bucket.reset_time ?? null,
+          resetsAt: normalizeResetTime(bucket.reset_time),
         };
       }),
     }));

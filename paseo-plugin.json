@@ -1,15 +1,19 @@
 {
   "id": "usage-sidebar",
   "name": "Usage Sidebar",
-  "description": "Show provider account quotas, DeepSeek balance, OpenCode spend, and Antigravity limits in the sidebar with a detail screen.",
+  "description": "Show provider account quotas, multi-account Antigravity limits, DeepSeek balance, OpenCode spend, and Pi status in the sidebar with a detail screen.",
   "translations": {
     "zh-CN": {
       "name": "配额侧边栏",
-      "description": "在侧边栏常驻展示各模型账号配额、DeepSeek 余额、OpenCode 花费与 Antigravity 额度，并提供详情页与显示项管理。"
+      "description": "在侧边栏常驻展示各模型账号配额、Antigravity 多账号额度、DeepSeek 余额、OpenCode 花费与 Pi 状态，并提供详情页、语言切换与显示项管理。"
     }
   },
   "icon": "assets/icon.png",
-  "media": [],
+  "media": [
+    "assets/agy-sidebar-en.png",
+    "assets/quota-details-en.png",
+    "assets/settings-en.png"
+  ],
   "requirements": {
     "paseo": ">=0.16.0-beta.2"
   }

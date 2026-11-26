@@ -1,12 +1,10 @@
-import {
-  useTranslation,
-  type PluginSurfaceProps,
-} from "@getpaseo/plugin/client";
+import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
 import {
   SettingsAction,
   SettingsCard,
   SettingsRow,
   SettingsSection,
+  SettingsSelect,
   SettingsSwitch,
 } from "@getpaseo/plugin/client/ui";
 import { useMemo } from "react";
@@ -14,16 +12,24 @@ import { Text, View } from "react-native";
 import {
   EXTENDED_SOURCE_IDS,
   providerVisibilityId,
+  type PluginLanguagePreference,
 } from "../shared/settings";
 import { resolveProviderLabels } from "./format";
-import { messages } from "./messages";
+import { usePluginI18n } from "./messages";
 import {
   useProviderUsageQuery,
   useUsageVisibility,
 } from "./use-usage-data";
 
 export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
-  const { t } = useTranslation(messages);
+  const {
+    t,
+    language,
+    setLanguage,
+    languageReady,
+    languageSaving,
+    languageSaveError,
+  } = usePluginI18n();
   const visibility = useUsageVisibility(host.id);
   const providersQuery = useProviderUsageQuery(host.id);
 
@@ -42,6 +48,16 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
       },
     }),
     [theme],
+  );
+
+  const languageOptions = useMemo(
+    () => [
+      { value: "app" as const, label: t("settings.langApp") },
+      { value: "system" as const, label: t("settings.langSystem") },
+      { value: "en" as const, label: "English" },
+      { value: "zh-CN" as const, label: "简体中文" },
+    ],
+    [t],
   );
 
   const extendedItems = useMemo(
@@ -66,6 +82,11 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
         label: t("settings.extAntigravityLabel"),
         hint: t("settings.extAntigravityHint"),
       },
+      {
+        id: EXTENDED_SOURCE_IDS.pi,
+        label: t("settings.extPiLabel"),
+        hint: t("settings.extPiHint"),
+      },
     ],
     [t],
   );
@@ -87,6 +108,14 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
           : t("settings.builtinHint", { id: provider.providerId }),
       });
     }
+    const claudeId = providerVisibilityId("claude");
+    if (!map.has(claudeId)) {
+      map.set(claudeId, {
+        id: claudeId,
+        label: t("claude.title"),
+        hint: t("settings.claudeUnconfiguredHint"),
+      });
+    }
     for (const hiddenId of visibility.hiddenIds) {
       if (hiddenId.startsWith("provider:") && !map.has(hiddenId)) {
         const rawId = hiddenId.slice("provider:".length);
@@ -100,9 +129,26 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
     return [...map.values()];
   }, [providersQuery.data?.providers, t, visibility.hiddenIds]);
 
+  const languageSection = (
+    <SettingsSection title={t("settings.sectionLanguage")}>
+      <SettingsCard>
+        <SettingsSelect<PluginLanguagePreference>
+          label={t("settings.languageLabel")}
+          hint={t("settings.languageHint")}
+          error={languageSaveError}
+          value={language}
+          options={languageOptions}
+          disabled={!languageReady || languageSaving}
+          onValueChange={(next) => void setLanguage(next)}
+        />
+      </SettingsCard>
+    </SettingsSection>
+  );
+
   if (visibility.loading) {
     return (
       <View style={styles.container}>
+        {languageSection}
         <Text style={styles.muted}>{t("settings.loading")}</Text>
       </View>
     );
@@ -111,6 +157,7 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
   if (visibility.settings.status === "error") {
     return (
       <View style={styles.container}>
+        {languageSection}
         <Text style={styles.error}>
           {t("settings.readError", { error: visibility.settings.error })}
         </Text>
@@ -121,6 +168,7 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
   if (visibility.settings.status === "invalid") {
     return (
       <View style={styles.container}>
+        {languageSection}
         <SettingsSection title={t("settings.invalidSection")}>
           <SettingsCard>
             <SettingsAction
@@ -143,6 +191,8 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
           {t("settings.saveError", { error: visibility.saveError })}
         </Text>
       ) : null}
+
+      {languageSection}
 
       <SettingsSection title={t("settings.sectionBuiltin")}>
         <SettingsCard>
@@ -196,6 +246,13 @@ export function UsageSettingsScreen({ theme, host }: PluginSurfaceProps) {
             disabled={visibility.saving}
             value={visibility.reuseOpenCodeCredentials}
             onValueChange={(next) => void visibility.setReuseOpenCodeCredentials(next)}
+          />
+          <SettingsSwitch
+            label={t("settings.reusePiCredsLabel")}
+            hint={t("settings.reusePiCredsHint")}
+            disabled={visibility.saving}
+            value={visibility.reusePiCredentials}
+            onValueChange={(next) => void visibility.setReusePiCredentials(next)}
           />
         </SettingsCard>
       </SettingsSection>

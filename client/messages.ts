@@ -27,11 +27,19 @@ export function isZhLocale(locale: string): boolean {
 export function resolveSystemLocale(): "en" | "zh-CN" {
   try {
     const resolved = Intl.DateTimeFormat().resolvedOptions().locale;
-    if (resolved && isZhLocale(resolved)) {
+    if (resolved) {
+      return isZhLocale(resolved) ? "zh-CN" : "en";
+    }
+  } catch {
+    // Fall back below when Intl locale resolution is unavailable.
+  }
+  try {
+    const navLang = (globalThis as { navigator?: { language?: string } }).navigator?.language;
+    if (navLang && isZhLocale(navLang)) {
       return "zh-CN";
     }
   } catch {
-    // Fall back to English when Intl locale resolution is unavailable.
+    // Fall back to English.
   }
   return "en";
 }
@@ -78,7 +86,9 @@ export function usePluginI18n() {
   const t = useCallback(
     ((key: string, options?: Record<string, unknown>) => {
       if (language === "app") {
-        return (hostT as (k: string, opts?: Record<string, unknown>) => string)(key, options);
+        return options !== undefined
+          ? (hostT as (k: string, opts?: Record<string, unknown>) => string)(key, options)
+          : (hostT as (k: string) => string)(key);
       }
       const primaryTree = isZhLocale(effectiveLocale) ? zhCN : en;
       const template = lookupTemplate(primaryTree, key) ?? lookupTemplate(en, key) ?? key;
@@ -107,6 +117,7 @@ export function usePluginI18n() {
     language,
     setLanguage,
     languageSaving: layoutSettings.saving,
+    languageSaveError: layoutSettings.saveError,
     languageReady: layoutSettings.status === "ready",
   };
 }

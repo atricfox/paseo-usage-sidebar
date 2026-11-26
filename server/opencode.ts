@@ -101,6 +101,7 @@ type ResolvedGoKey =
 
 async function resolveOpenCodeGoKey(
   reuseOpenCodeCredentials: boolean,
+  reusePiCredentials: boolean,
 ): Promise<ResolvedGoKey> {
   const envKey = process.env.OPENCODE_GO_API_KEY?.trim();
   if (envKey) {
@@ -141,7 +142,9 @@ async function resolveOpenCodeGoKey(
     if (v2Key) {
       return { kind: "found", apiKey: v2Key, source: "opencode-v2" };
     }
+  }
 
+  if (reusePiCredentials) {
     const piKey = await readPiApiKey(["opencode-go"]);
     if (piKey) {
       return { kind: "found", apiKey: piKey, source: "pi" };
@@ -159,8 +162,12 @@ function clampPercent(value: number): number {
 
 async function fetchOpenCodeGoStatus(
   reuseOpenCodeCredentials: boolean,
+  reusePiCredentials: boolean,
 ): Promise<OpenCodeGoStatus> {
-  const resolved = await resolveOpenCodeGoKey(reuseOpenCodeCredentials);
+  const resolved = await resolveOpenCodeGoKey(
+    reuseOpenCodeCredentials,
+    reusePiCredentials,
+  );
   if (resolved.kind === "missing") {
     return {
       status: "unconfigured",
@@ -372,17 +379,19 @@ export function createOpenCodeUsageHandler(
     const fetchedAt = new Date().toISOString();
 
     let reuseOpenCodeCredentials = false;
+    let reusePiCredentials = false;
     try {
       const state = await settings.read();
       if (state.status === "ready") {
         reuseOpenCodeCredentials = state.values.reuseOpenCodeCredentials;
+        reusePiCredentials = state.values.reusePiCredentials;
       }
     } catch {
-      // Keep opt-in default false when settings cannot be read.
+      // Keep opt-in defaults false when settings cannot be read.
     }
 
     const [go, localStats] = await Promise.all([
-      fetchOpenCodeGoStatus(reuseOpenCodeCredentials),
+      fetchOpenCodeGoStatus(reuseOpenCodeCredentials, reusePiCredentials),
       fetchOpenCodeLocalStats(),
     ]);
     return { fetchedAt, go, localStats };

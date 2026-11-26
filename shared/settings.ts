@@ -4,21 +4,27 @@ import { z } from "zod";
 export const usageSidebarSettings = defineSettings({
   id: "display",
   scope: "host",
-  version: 2,
+  version: 3,
   schema: z.object({
     hiddenIds: z.array(z.string()).default([]),
     reuseOpenCodeCredentials: z.boolean().default(false),
+    reusePiCredentials: z.boolean().default(false),
     showOpenCodeFreeModels: z.boolean().default(false),
   }),
   migrate(values, fromVersion) {
-    if (fromVersion === 1 && values && typeof values === "object") {
+    if ((fromVersion === 1 || fromVersion === 2) && values && typeof values === "object") {
       const legacy = values as Record<string, unknown>;
       return {
         hiddenIds: Array.isArray(legacy.hiddenIds) ? legacy.hiddenIds : [],
         reuseOpenCodeCredentials:
-          typeof legacy.reuseOpenCodeDeepSeekKey === "boolean"
-            ? legacy.reuseOpenCodeDeepSeekKey
-            : false,
+          fromVersion === 1
+            ? typeof legacy.reuseOpenCodeDeepSeekKey === "boolean"
+              ? legacy.reuseOpenCodeDeepSeekKey
+              : false
+            : typeof legacy.reuseOpenCodeCredentials === "boolean"
+              ? legacy.reuseOpenCodeCredentials
+              : false,
+        reusePiCredentials: false,
         showOpenCodeFreeModels:
           typeof legacy.showOpenCodeFreeModels === "boolean"
             ? legacy.showOpenCodeFreeModels

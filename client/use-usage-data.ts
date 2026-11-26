@@ -228,6 +228,8 @@ export function useUsageVisibility(hostId: string) {
   const hiddenList = settings.status === "ready" ? settings.values.hiddenIds : [];
   const reuseOpenCodeCredentials =
     settings.status === "ready" ? settings.values.reuseOpenCodeCredentials : false;
+  const reusePiCredentials =
+    settings.status === "ready" ? settings.values.reusePiCredentials : false;
   const showOpenCodeFreeModels =
     settings.status === "ready" ? settings.values.showOpenCodeFreeModels : false;
 
@@ -273,6 +275,31 @@ export function useUsageVisibility(hostId: string) {
           queryClient.invalidateQueries({
             queryKey: ["usage-sidebar", "opencode", hostId],
           }),
+        ]);
+      }
+      return ok;
+    },
+    [hostId, queryClient, settings],
+  );
+
+  const setReusePiCredentials = useCallback(
+    async (value: boolean): Promise<boolean> => {
+      if (settings.status !== "ready") return false;
+      const ok = await settings.save(
+        {
+          ...settings.values,
+          reusePiCredentials: value,
+        },
+        settings.revision,
+      );
+      if (ok) {
+        await Promise.all([
+          queryClient.invalidateQueries({
+            queryKey: ["usage-sidebar", "deepseek", hostId],
+          }),
+          queryClient.invalidateQueries({
+            queryKey: ["usage-sidebar", "opencode", hostId],
+          }),
           queryClient.invalidateQueries({
             queryKey: ["usage-sidebar", "pi", hostId],
           }),
@@ -297,6 +324,24 @@ export function useUsageVisibility(hostId: string) {
     [settings],
   );
 
+  const reset = useCallback(async (): Promise<boolean> => {
+    const ok = await settings.reset();
+    if (ok) {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["usage-sidebar", "deepseek", hostId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["usage-sidebar", "opencode", hostId],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: ["usage-sidebar", "pi", hostId],
+        }),
+      ]);
+    }
+    return ok;
+  }, [hostId, queryClient, settings]);
+
   return {
     settings,
     loading: settings.status === "loading",
@@ -306,12 +351,14 @@ export function useUsageVisibility(hostId: string) {
     hiddenIds: hiddenList,
     hiddenSet,
     reuseOpenCodeCredentials,
+    reusePiCredentials,
     showOpenCodeFreeModels,
     isHidden,
     setHidden,
     setReuseOpenCodeCredentials,
+    setReusePiCredentials,
     setShowOpenCodeFreeModels,
-    reset: settings.reset,
+    reset,
   };
 }
 

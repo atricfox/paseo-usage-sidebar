@@ -39,6 +39,7 @@ type ResolvedKeyResult =
 
 async function resolveDeepSeekApiKey(
   reuseOpenCodeCredentials: boolean,
+  reusePiCredentials: boolean,
 ): Promise<ResolvedKeyResult> {
   const envKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (envKey) {
@@ -84,6 +85,9 @@ async function resolveDeepSeekApiKey(
     if (openCodeKey) {
       return { kind: "found", apiKey: openCodeKey, source: "opencode" };
     }
+  }
+
+  if (reusePiCredentials) {
     const piKey = await readPiApiKey(["deepseek"]);
     if (piKey) {
       return { kind: "found", apiKey: piKey, source: "pi" };
@@ -102,16 +106,21 @@ export function createDeepSeekBalanceHandler(
     const fetchedAt = new Date().toISOString();
 
     let reuseOpenCodeCredentials = false;
+    let reusePiCredentials = false;
     try {
       const state = await settings.read();
       if (state.status === "ready") {
         reuseOpenCodeCredentials = state.values.reuseOpenCodeCredentials;
+        reusePiCredentials = state.values.reusePiCredentials;
       }
     } catch {
-      // Keep opt-in default false when settings cannot be read.
+      // Keep opt-in defaults false when settings cannot be read.
     }
 
-    const resolved = await resolveDeepSeekApiKey(reuseOpenCodeCredentials);
+    const resolved = await resolveDeepSeekApiKey(
+      reuseOpenCodeCredentials,
+      reusePiCredentials,
+    );
 
     if (resolved.kind === "missing") {
       return {

@@ -1,7 +1,4 @@
-import {
-  useTranslation,
-  type PluginSidebarItemProps,
-} from "@getpaseo/plugin/client";
+import type { PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow, SidebarSeparator } from "@getpaseo/plugin/client/ui";
 import { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
@@ -26,12 +23,13 @@ import {
   toneToColor,
   type ProviderUsageItem,
 } from "./format";
-import { messages } from "./messages";
+import { usePluginI18n } from "./messages";
 import {
   USAGE_SCREEN_ID,
   useAntigravityUsageQuery,
   useDeepSeekBalanceQuery,
   useOpenCodeUsageQuery,
+  usePiUsageQuery,
   useProviderUsageQuery,
   useSidebarCollapsed,
   useUsageVisibility,
@@ -68,13 +66,14 @@ export function UsageSidebarFooterItem({
   currentScreen,
   openScreen,
 }: PluginSidebarItemProps) {
-  const { t, locale } = useTranslation(messages);
+  const { t, locale } = usePluginI18n();
   const visibility = useUsageVisibility(host.id);
   const sidebarLayout = useSidebarCollapsed();
   const providersQuery = useProviderUsageQuery(host.id);
   const deepSeekQuery = useDeepSeekBalanceQuery(host.id);
   const openCodeQuery = useOpenCodeUsageQuery(host.id);
   const antigravityQuery = useAntigravityUsageQuery(host.id);
+  const piQuery = usePiUsageQuery(host.id);
 
   const styles = useMemo(
     () => ({
@@ -113,6 +112,9 @@ export function UsageSidebarFooterItem({
   const hasBuiltInOpenCodeGo = allProviders.some(
     (item) => item.providerId.toLowerCase() === "opencode-go",
   );
+  const hasBuiltInClaude = allProviders.some(
+    (item) => item.providerId.toLowerCase() === "claude",
+  );
   const filteredProviders = useMemo(
     () =>
       allProviders.filter((item) => !visibility.isHidden(providerVisibilityId(item.providerId))),
@@ -138,11 +140,21 @@ export function UsageSidebarFooterItem({
 
   const visibleProviders = filteredProviders;
 
+  const showClaudeUnconfigured =
+    !providersQuery.isPending &&
+    !providersQuery.isError &&
+    !hasBuiltInClaude &&
+    !visibility.isHidden(providerVisibilityId("claude"));
   const showDeepSeek = !visibility.isHidden(EXTENDED_SOURCE_IDS.deepseek);
   const showOpenCodeGo =
     !hasBuiltInOpenCodeGo && !visibility.isHidden(EXTENDED_SOURCE_IDS.opencodeGo);
   const showOpenCodeLocal = !visibility.isHidden(EXTENDED_SOURCE_IDS.opencode);
   const showAntigravity = !visibility.isHidden(EXTENDED_SOURCE_IDS.antigravity);
+  const showPi =
+    !visibility.isHidden(EXTENDED_SOURCE_IDS.pi) &&
+    (piQuery.isError ||
+      piQuery.data?.status === "available" ||
+      piQuery.data?.status === "error");
 
   const buildProviderSummary = (provider: ProviderUsageItem): CompactTrailingSummary => {
     if (provider.status === "error") {
@@ -379,6 +391,45 @@ export function UsageSidebarFooterItem({
     return { primary: t("common.available"), primaryColor: theme.colors.statusSuccess };
   };
 
+  const piSummary = useMemo((): CompactTrailingSummary => {
+    if (piQuery.isPending && !piQuery.data) {
+      return { primary: "...", primaryColor: theme.colors.foregroundMuted };
+    }
+    if (piQuery.isError) {
+      return { primary: t("common.error"), primaryColor: theme.colors.statusDanger };
+    }
+    const result = piQuery.data;
+    if (!result) return { primary: "--", primaryColor: theme.colors.foregroundMuted };
+    if (result.status === "not_found") {
+      return { primary: t("common.notConfigured"), primaryColor: theme.colors.foregroundMuted };
+    }
+    if (result.status === "error") {
+      return { primary: t("common.readFailed"), primaryColor: theme.colors.statusDanger };
+    }
+    if (result.openRouter?.status === "available") {
+      return {
+        primary: formatUsdCompact(result.openRouter.remainingUsd),
+        primaryColor:
+          result.openRouter.remainingUsd > 0
+            ? theme.colors.statusSuccess
+            : theme.colors.statusDanger,
+        secondary: "OpenRouter",
+      };
+    }
+    if (result.openRouter?.status === "error") {
+      return {
+        primary: t("common.readFailed"),
+        primaryColor: theme.colors.statusDanger,
+        secondary: "OpenRouter",
+      };
+    }
+    return {
+      primary: t("pi.providersCount", { count: result.providers.length }),
+      primaryColor:
+        result.providers.length > 0 ? theme.colors.foreground : theme.colors.foregroundMuted,
+    };
+  }, [piQuery.data, piQuery.isError, piQuery.isPending, t, theme]);
+
   const accounts = antigravityQuery.data ?? [{ id: "antigravity", label: "Antigravity", quota: undefined }];
 
   if (visibility.loading || sidebarLayout.loading) {
@@ -425,10 +476,12 @@ export function UsageSidebarFooterItem({
 
   const hasAnyVisibleRow =
     visibleProviders.length > 0 ||
+    showClaudeUnconfigured ||
     showDeepSeek ||
     showOpenCodeGo ||
     showOpenCodeLocal ||
     showAntigravity ||
+    showPi ||
     (providersQuery.isPending && allProviders.length === 0) ||
     (providersQuery.isError && allProviders.length === 0);
 
@@ -476,6 +529,25 @@ export function UsageSidebarFooterItem({
           );
         })
       )}
+
+      {showClaudeUnconfigured ? (
+        <SidebarRow
+          id="provider-claude-unconfigured"
+          icon="Gauge"
+          label={t("claude.title")}
+          active={isOnUsageScreen && activeFocus === "claude-unconfigured"}
+          onPress={() =>
+            openScreen({
+              screenId: USAGE_SCREEN_ID,
+              params: { focus: "claude-unconfigured" },
+            })
+          }
+          trailing={renderTrailing({
+            primary: t("common.unconfigured"),
+            primaryColor: theme.colors.foregroundMuted,
+          })}
+        />
+      ) : null}
 
       {showDeepSeek ? (
         <SidebarRow
@@ -540,6 +612,22 @@ export function UsageSidebarFooterItem({
             trailing={renderTrailing(buildAntigravityGroupSummary(group))} />
         ));
       })}
+
+      {showPi ? (
+        <SidebarRow
+          id="pi-usage"
+          icon="Terminal"
+          label="Pi"
+          active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.pi}
+          onPress={() =>
+            openScreen({
+              screenId: USAGE_SCREEN_ID,
+              params: { focus: EXTENDED_SOURCE_IDS.pi },
+            })
+          }
+          trailing={renderTrailing(piSummary)}
+        />
+      ) : null}
 
       {!hasAnyVisibleRow ? (
         <SidebarRow
