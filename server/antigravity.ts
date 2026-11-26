@@ -1,8 +1,8 @@
 import { execFile } from "node:child_process";
 import { constants } from "node:fs";
-import { access } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { access, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { RpcInput } from "@getpaseo/plugin";
 import type { PluginHandlerContext } from "@getpaseo/plugin/server";
@@ -62,33 +62,16 @@ const agyCreditsResponseSchema = z.object({
     .optional(),
 });
 
-const providerEnvSchema = z.object({
-  agents: z
-    .object({
-      providers: z
-        .object({
-          antigravity: z
-            .object({
-              env: z.record(z.string(), z.string()).optional(),
-              command: z.union([z.string(), z.array(z.string())]).optional(),
-            })
-            .passthrough()
-            .optional(),
-        })
-        .passthrough()
-        .optional(),
-    })
-    .passthrough()
-    .optional(),
+const profileSchema = z.object({
+  label: z.string().optional(),
+  enabled: z.boolean().optional(),
+  env: z.record(z.string(), z.string()).default({}),
+  command: z.union([z.string(), z.array(z.string())]).optional(),
 });
+type Profile = z.infer<typeof profileSchema>;
 
-interface CacheEntry {
-  expiresAt: number;
-  result: Extract<AntigravityUsageResult, { status: "available" }>;
-}
-
-let cachedResult: CacheEntry | null = null;
-let inFlightFetch: Promise<AntigravityUsageResult> | null = null;
+const cache = new Map<string, { expiresAt: number; result: AntigravityUsageResult }>();
+const pending = new Map<string, Promise<AntigravityUsageResult>>();
 
 async function isExecutable(filePath: string): Promise<boolean> {
   try {
@@ -132,21 +115,37 @@ function clampPercent(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-async function readAntigravityProviderConfig(
-  context: PluginHandlerContext,
-): Promise<{ env: Record<string, string>; command?: string | string[] }> {
+async function profiles(context: PluginHandlerContext) {
+  // The mutable config RPC omits the daemon's provider launch definitions.
+  const home = process.env.PASEO_HOME || join(homedir(), ".paseo");
+  let config: unknown;
   try {
-    const { config } = await context.paseo.config.get();
-    const parsed = providerEnvSchema.safeParse(config);
-    if (!parsed.success) return { env: {} };
-    const agyConfig = parsed.data.agents?.providers?.antigravity;
-    return {
-      env: agyConfig?.env ?? {},
-      command: agyConfig?.command,
-    };
-  } catch {
-    return { env: {} };
+    config = JSON.parse(await readFile(join(home, "config.json"), "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    ({ config } = await context.paseo.config.get());
   }
+  const data = z.object({
+    agents: z.object({ providers: z.record(z.string(), z.unknown()).optional() }).optional(),
+  }).parse(config);
+  const entries = { antigravity: {}, ...data.agents?.providers };
+  return Object.entries(entries).flatMap(([id, raw]) => {
+    const parsed = profileSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.enabled === false) return [];
+    const profile = parsed.data;
+    const argv = profile.command;
+    const isAgy = Array.isArray(argv) && basename(argv[0] ?? "") === "agy" && argv.includes("acp");
+    return id === "antigravity" || isAgy ? [{ id, profile }] : [];
+  });
+}
+
+function directoryFlag(argv: string[], name: string, fallback: string) {
+  for (const [index, arg] of argv.entries()) {
+    const flag = arg.replaceAll("_", "-");
+    if (flag === name) return argv[index + 1] ?? fallback;
+    if (flag.startsWith(name + "=")) return arg.slice(name.length + 1);
+  }
+  return fallback;
 }
 
 async function runAgyCommand(
@@ -201,10 +200,9 @@ function parseJsonLineOrDoc(stdout: string): unknown {
 }
 
 async function fetchAntigravityUsageLive(
-  context: PluginHandlerContext,
+  providerConfig: Profile,
 ): Promise<AntigravityUsageResult> {
   const fetchedAt = new Date().toISOString();
-  const providerConfig = await readAntigravityProviderConfig(context);
   const binary = await findAgyBinary(providerConfig.command);
 
   if (!binary) {
@@ -215,10 +213,25 @@ async function fetchAntigravityUsageLive(
     };
   }
 
+  let temporaryHome: string | undefined;
   try {
+    let env = providerConfig.env;
+    const argv = Array.isArray(providerConfig.command) ? providerConfig.command : [];
+    const geminiDir = directoryFlag(argv, "--gemini-dir", ".gemini");
+    const appDir = directoryFlag(argv, "--app-data-dir", "antigravity-cli");
+    if (geminiDir !== ".gemini" || appDir !== "antigravity-cli") {
+      // Print mode uses fixed directory names. Point it at the same store as ACP.
+      const store = resolve(env.HOME || homedir(), geminiDir, appDir);
+      await access(store);
+      temporaryHome = await mkdtemp(join(tmpdir(), "paseo-agy-"));
+      const gemini = join(temporaryHome, ".gemini");
+      await mkdir(gemini);
+      await symlink(store, join(gemini, "antigravity-cli"), "dir");
+      env = { ...env, HOME: temporaryHome };
+    }
     const [usageStdout, creditsOutcome] = await Promise.all([
-      runAgyCommand(binary, "/usage", providerConfig.env),
-      runAgyCommand(binary, "/credits", providerConfig.env).catch(() => null),
+      runAgyCommand(binary, "/usage", env),
+      runAgyCommand(binary, "/credits", env).catch(() => null),
     ]);
 
     const parsedUsage = agyUsageResponseSchema.safeParse(parseJsonLineOrDoc(usageStdout));
@@ -275,11 +288,6 @@ async function fetchAntigravityUsageLive(
       remainingCredits,
     };
 
-    cachedResult = {
-      expiresAt: Date.now() + CACHE_TTL_MS,
-      result,
-    };
-
     return result;
   } catch (error) {
     const killed = (error as { killed?: unknown } | null)?.killed === true;
@@ -288,31 +296,39 @@ async function fetchAntigravityUsageLive(
       fetchedAt,
       code: killed ? "timeout" : "exec_failed",
     };
+  } finally {
+    if (temporaryHome) await rm(temporaryHome, { recursive: true, force: true });
   }
 }
 
-export async function getAntigravityUsage(
-  input: RpcInput<typeof antigravityUsageRpc>,
-  context: PluginHandlerContext,
-): Promise<AntigravityUsageResult> {
-  const forceRefresh = input.forceRefresh === true;
-
-  if (!forceRefresh && cachedResult && Date.now() < cachedResult.expiresAt) {
-    return {
-      ...cachedResult.result,
-      cached: true,
-    };
+async function quotaFor(profile: Profile, id: string, force: boolean) {
+  const key = JSON.stringify([id, profile]);
+  const cached = cache.get(key);
+  if (!force && cached && cached.expiresAt > Date.now() && cached.result.status === "available") {
+    return { ...cached.result, cached: true };
   }
-
-  if (!forceRefresh && inFlightFetch) {
-    return inFlightFetch;
-  }
-
-  const request = fetchAntigravityUsageLive(context).finally(() => {
-    if (inFlightFetch === request) {
-      inFlightFetch = null;
-    }
-  });
-  inFlightFetch = request;
+  const existing = pending.get(key);
+  if (existing) return existing;
+  const request = fetchAntigravityUsageLive(profile).then((result) => {
+    if (result.status === "available") cache.set(key, { result, expiresAt: Date.now() + CACHE_TTL_MS });
+    return result;
+  }).finally(() => pending.delete(key));
+  pending.set(key, request);
   return request;
+}
+
+export async function getAccountUsage(input: { forceRefresh?: boolean }, context: PluginHandlerContext) {
+  const entries = await profiles(context);
+  return Promise.all(entries.map(async ({ id, profile }) => ({
+    id,
+    label: profile.label || (id === "antigravity" ? (entries.length > 1 ? "Antigravity A" : "Antigravity") : id),
+    quota: await quotaFor(profile, id, !!input.forceRefresh),
+  })));
+}
+
+export async function getAntigravityUsage(input: RpcInput<typeof antigravityUsageRpc>, context: PluginHandlerContext) {
+  const entries = await profiles(context);
+  const main = entries.find(({ id }) => id === "antigravity");
+  if (main) return quotaFor(main.profile, main.id, !!input.forceRefresh);
+  return { status: "unavailable" as const, fetchedAt: new Date().toISOString(), code: "cli_not_found" as const };
 }

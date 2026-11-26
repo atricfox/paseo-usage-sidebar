@@ -31,12 +31,16 @@ export const usageSidebarSettings = defineSettings({
 
 export type UsageSidebarSettingsValues = z.infer<typeof usageSidebarSettings.schema>;
 
+export const pluginLanguageSchema = z.enum(["app", "system", "en", "zh-CN"]);
+export type PluginLanguagePreference = z.infer<typeof pluginLanguageSchema>;
+
 export const usageSidebarDeviceLayout = defineSettings({
   id: "layout",
   scope: "device",
   version: 1,
   schema: z.object({
     collapsed: z.boolean().default(false),
+    language: pluginLanguageSchema.default("app"),
   }),
 });
 
@@ -47,6 +51,7 @@ export const EXTENDED_SOURCE_IDS = {
   opencodeGo: "opencode-go",
   opencode: "opencode",
   antigravity: "antigravity",
+  pi: "pi",
 } as const;
 
 export function providerVisibilityId(providerId: string): string {

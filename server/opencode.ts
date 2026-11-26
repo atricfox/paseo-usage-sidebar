@@ -20,6 +20,7 @@ import {
   readOpenCodeV2ApiKey,
   runOpenCodeCli,
 } from "./opencode-cli";
+import { readPiApiKey } from "./pi";
 
 const OPENCODE_GO_USAGE_URL = "https://opencode.ai/zen/go/v1/usage";
 const LOCAL_CONFIG_DISPLAY_PATH = "~/.paseo/usage-sidebar.json";
@@ -93,7 +94,7 @@ type ResolvedGoKey =
   | {
       kind: "found";
       apiKey: string;
-      source: "env" | "config" | "opencode-v1" | "opencode-v2";
+      source: "env" | "config" | "opencode-v1" | "opencode-v2" | "pi";
     }
   | { kind: "missing" }
   | { kind: "config_error"; code: OpenCodeGoErrorCode };
@@ -139,6 +140,11 @@ async function resolveOpenCodeGoKey(
     const v2Key = await readOpenCodeV2ApiKey(["opencode-go", "opencode go", "opencode-zen"]);
     if (v2Key) {
       return { kind: "found", apiKey: v2Key, source: "opencode-v2" };
+    }
+
+    const piKey = await readPiApiKey(["opencode-go"]);
+    if (piKey) {
+      return { kind: "found", apiKey: piKey, source: "pi" };
     }
   }
 

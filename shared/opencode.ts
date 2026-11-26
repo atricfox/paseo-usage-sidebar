@@ -18,6 +18,7 @@ export const openCodeGoSourceSchema = z.enum([
   "config",
   "opencode-v1",
   "opencode-v2",
+  "pi",
 ]);
 
 export const openCodeGoErrorCodeSchema = z.enum([

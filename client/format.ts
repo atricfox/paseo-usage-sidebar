@@ -305,6 +305,11 @@ export function resolveProviderLabels(provider: ProviderUsageItem): ResolvedProv
   const explicitSource = provider.sourceLabel?.trim() || "";
   const knownSource = KNOWN_SOURCE_LABELS[provider.providerId.toLowerCase()];
 
+  const source = explicitSource || knownSource;
+  if (source && display.startsWith(source + " (") && display.endsWith(")")) {
+    return { sourceName: source, accountLabel: display.slice(source.length + 2, -1) };
+  }
+
   if (display.includes("@")) {
     return {
       sourceName: explicitSource || knownSource || fallbackSourceName(provider.providerId),

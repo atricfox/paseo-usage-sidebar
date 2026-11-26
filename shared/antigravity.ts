@@ -60,3 +60,17 @@ export const antigravityUsageRpc = defineRpc({
   }),
   output: antigravityUsageOutputSchema,
 });
+
+const accountUsageSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  quota: antigravityUsageOutputSchema,
+});
+
+export type AntigravityAccountUsage = z.infer<typeof accountUsageSchema>;
+
+export const accountUsageRpc = defineRpc({
+  name: "antigravity.accounts",
+  input: z.object({ forceRefresh: z.boolean().optional() }),
+  output: z.array(accountUsageSchema),
+});

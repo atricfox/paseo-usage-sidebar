@@ -8,6 +8,7 @@ import type { DeepSeekBalanceResult, DeepSeekErrorCode } from "../shared/deepsee
 import { deepSeekBalanceRpc } from "../shared/deepseek";
 import type { usageSidebarSettings } from "../shared/settings";
 import { readOpenCodeV1Key, readOpenCodeV2ApiKey } from "./opencode-cli";
+import { readPiApiKey } from "./pi";
 
 const DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance";
 const DEEPSEEK_CONFIG_DISPLAY_PATH = "~/.paseo/usage-sidebar.json";
@@ -32,7 +33,7 @@ const apiResponseSchema = z.object({
 });
 
 type ResolvedKeyResult =
-  | { kind: "found"; apiKey: string; source: "env" | "config" | "opencode" }
+  | { kind: "found"; apiKey: string; source: "env" | "config" | "opencode" | "pi" }
   | { kind: "missing" }
   | { kind: "config_error"; code: DeepSeekErrorCode };
 
@@ -82,6 +83,10 @@ async function resolveDeepSeekApiKey(
       (await readOpenCodeV2ApiKey(["deepseek"])) ?? (await readOpenCodeV1Key("deepseek"));
     if (openCodeKey) {
       return { kind: "found", apiKey: openCodeKey, source: "opencode" };
+    }
+    const piKey = await readPiApiKey(["deepseek"]);
+    if (piKey) {
+      return { kind: "found", apiKey: piKey, source: "pi" };
     }
   }
 

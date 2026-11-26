@@ -10,7 +10,7 @@ export const deepSeekBalanceInfoSchema = z.object({
 
 export type DeepSeekBalanceInfo = z.infer<typeof deepSeekBalanceInfoSchema>;
 
-export const deepSeekBalanceSourceSchema = z.enum(["env", "config", "opencode"]);
+export const deepSeekBalanceSourceSchema = z.enum(["env", "config", "opencode", "pi"]);
 
 export const deepSeekErrorCodeSchema = z.enum([
   "config_read_failed",

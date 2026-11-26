@@ -6,9 +6,10 @@ import {
 } from "@getpaseo/plugin/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
-import { antigravityUsageRpc } from "../shared/antigravity";
+import { accountUsageRpc } from "../shared/antigravity";
 import { deepSeekBalanceRpc } from "../shared/deepseek";
 import { openCodeUsageRpc } from "../shared/opencode";
+import { piUsageRpc } from "../shared/pi";
 import {
   usageSidebarDeviceLayout,
   usageSidebarSettings,
@@ -73,11 +74,22 @@ export function useOpenCodeUsageQuery(hostId: string) {
   });
 }
 
+export function usePiUsageQuery(hostId: string) {
+  const fetchPiUsage = useRpc(piUsageRpc);
+  return useQuery({
+    queryKey: ["usage-sidebar", "pi", hostId],
+    queryFn: () => fetchPiUsage({}),
+    refetchInterval: USAGE_POLL_INTERVAL_MS,
+    staleTime: 30_000,
+    retry: 1,
+  });
+}
+
 export function useAntigravityUsageQuery(hostId: string) {
-  const fetchAntigravityUsage = useRpc(antigravityUsageRpc);
+  const fetchAntigravityUsage = useRpc(accountUsageRpc);
   const queryClient = useQueryClient();
   const queryKey = useMemo(
-    () => ["usage-sidebar", "antigravity", hostId] as const,
+    () => ["usage-sidebar", "antigravity-accounts", hostId] as const,
     [hostId],
   );
 
@@ -261,6 +273,9 @@ export function useUsageVisibility(hostId: string) {
           queryClient.invalidateQueries({
             queryKey: ["usage-sidebar", "opencode", hostId],
           }),
+          queryClient.invalidateQueries({
+            queryKey: ["usage-sidebar", "pi", hostId],
+          }),
         ]);
       }
       return ok;
@@ -313,7 +328,13 @@ export function useSidebarCollapsed() {
     const next = !collapsed;
     setFallbackCollapsed(next);
     if (layoutSettings.status === "ready") {
-      await layoutSettings.save({ collapsed: next }, layoutSettings.revision);
+      await layoutSettings.save(
+        {
+          ...layoutSettings.values,
+          collapsed: next,
+        },
+        layoutSettings.revision,
+      );
     }
   }, [collapsed, layoutSettings]);
 

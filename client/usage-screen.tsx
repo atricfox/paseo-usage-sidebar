@@ -5,7 +5,7 @@ import {
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
-import type { AntigravityErrorCode } from "../shared/antigravity";
+import type { AntigravityAccountUsage, AntigravityErrorCode } from "../shared/antigravity";
 import type { DeepSeekBalanceResult, DeepSeekErrorCode } from "../shared/deepseek";
 import type {
   OpenCodeGoErrorCode,
@@ -395,8 +395,10 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     }
   };
 
-  const deepSeekSourceLabel = (source: "env" | "config" | "opencode" | undefined): string | null => {
+  const deepSeekSourceLabel = (source: "env" | "config" | "opencode" | "pi" | undefined): string | null => {
     switch (source) {
+      case "pi":
+        return "Pi";
       case "env":
         return t("sources.env");
       case "config":
@@ -409,9 +411,11 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
   };
 
   const openCodeGoSourceLabel = (
-    source: "env" | "config" | "opencode-v1" | "opencode-v2" | undefined,
+    source: "env" | "config" | "opencode-v1" | "opencode-v2" | "pi" | undefined,
   ): string | null => {
     switch (source) {
+      case "pi":
+        return "Pi";
       case "env":
         return t("sources.env");
       case "config":
@@ -519,7 +523,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     providersQuery.data?.fetchedAt ??
       deepSeekQuery.data?.fetchedAt ??
       openCodeQuery.data?.fetchedAt ??
-      antigravityQuery.data?.fetchedAt,
+      antigravityQuery.data?.[0]?.quota.fetchedAt,
   );
 
   const renderHideButton = (visibilityId: string, displayName: string) =>
@@ -983,11 +987,13 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
     );
   };
 
-  const renderAntigravityCard = () => {
+  const renderAntigravityCard = (account?: AntigravityAccountUsage) => {
     if (visibility.isHidden(EXTENDED_SOURCE_IDS.antigravity)) return null;
-    const isFocused = focusParam === EXTENDED_SOURCE_IDS.antigravity;
-    const quota = antigravityQuery.data;
-    const agyAgents = agentsQuery.data?.byProvider.antigravity;
+    const id = account?.id ?? "antigravity";
+    const title = account?.label ?? t("antigravity.title");
+    const isFocused = focusParam === id;
+    const quota = account?.quota;
+    const agyAgents = agentsQuery.data?.byProvider[id];
 
     const statusBadge =
       antigravityQuery.isPending && !quota
@@ -1001,11 +1007,11 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
               : { label: t("common.error"), color: theme.colors.statusDanger };
 
     return (
-      <View style={[styles.card, isFocused ? styles.cardFocused : null]}>
+      <View key={id} style={[styles.card, isFocused ? styles.cardFocused : null]}>
         <View style={styles.cardHeader}>
           <View style={styles.cardTitleGroup}>
             <Icon name="Cpu" size={16} color={theme.colors.foreground} />
-            <Text style={styles.cardTitle}>{t("antigravity.title")}</Text>
+            <Text style={styles.cardTitle}>{title}</Text>
             <View style={styles.pill}>
               <Text style={styles.pillText}>agy /usage & /credits</Text>
             </View>
@@ -1369,7 +1375,7 @@ export function UsageDetailsScreen({ theme, host, layout, params }: PluginScreen
       {renderDeepSeekCard(deepSeekQuery.data)}
       {renderOpenCodeGoCard(openCodeQuery.data?.go)}
       {renderOpenCodeLocalCard(openCodeQuery.data?.localStats)}
-      {renderAntigravityCard()}
+      {antigravityQuery.data ? antigravityQuery.data.map(renderAntigravityCard) : renderAntigravityCard()}
 
       {hiddenItemLabels.length > 0 ? (
         <View style={styles.hiddenBar}>

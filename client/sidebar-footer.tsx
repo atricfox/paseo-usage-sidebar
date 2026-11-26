@@ -5,7 +5,7 @@ import {
 import { SidebarRow, SidebarSeparator } from "@getpaseo/plugin/client/ui";
 import { useMemo } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { AntigravityGroup } from "../shared/antigravity";
+import type { AntigravityGroup, AntigravityUsageResult } from "../shared/antigravity";
 import {
   EXTENDED_SOURCE_IDS,
   providerVisibilityId,
@@ -37,7 +37,7 @@ import {
   useUsageVisibility,
 } from "./use-usage-data";
 
-const MAX_PROVIDER_ROWS = 6;
+
 
 interface CompactTrailingSummary {
   primary: string;
@@ -52,13 +52,7 @@ function buildRowLabel(
 ): string {
   const { sourceName, accountLabel } = resolveProviderLabels(provider);
   if (!duplicateNames.has(sourceName)) return sourceName;
-  const shortAccount = accountLabel
-    ? accountLabel.includes("@")
-      ? accountLabel.split("@")[0] || accountLabel
-      : accountLabel
-    : null;
-  const extra = shortAccount || provider.planLabel || `#${index + 1}`;
-  return `${sourceName} (${extra})`;
+  return `${sourceName} (${accountLabel || "#" + (index + 1)})`;
 }
 
 function shortAntigravityGroupLabel(groupName: string): string {
@@ -142,8 +136,7 @@ export function UsageSidebarFooterItem({
     return dups;
   }, [filteredProviders]);
 
-  const visibleProviders = filteredProviders.slice(0, MAX_PROVIDER_ROWS);
-  const hiddenOverflowCount = Math.max(0, filteredProviders.length - visibleProviders.length);
+  const visibleProviders = filteredProviders;
 
   const showDeepSeek = !visibility.isHidden(EXTENDED_SOURCE_IDS.deepseek);
   const showOpenCodeGo =
@@ -369,14 +362,13 @@ export function UsageSidebarFooterItem({
     visibility.showOpenCodeFreeModels,
   ]);
 
-  const antigravityFallbackSummary = useMemo((): CompactTrailingSummary => {
+  const antigravityFallbackSummary = (result?: AntigravityUsageResult): CompactTrailingSummary => {
     if (antigravityQuery.isPending && !antigravityQuery.data) {
       return { primary: "...", primaryColor: theme.colors.foregroundMuted };
     }
     if (antigravityQuery.isError) {
       return { primary: t("common.error"), primaryColor: theme.colors.statusDanger };
     }
-    const result = antigravityQuery.data;
     if (!result) return { primary: "--", primaryColor: theme.colors.foregroundMuted };
     if (result.status === "unavailable") {
       return { primary: t("common.notInstalled"), primaryColor: theme.colors.foregroundMuted };
@@ -385,10 +377,9 @@ export function UsageSidebarFooterItem({
       return { primary: t("common.readFailed"), primaryColor: theme.colors.statusDanger };
     }
     return { primary: t("common.available"), primaryColor: theme.colors.statusSuccess };
-  }, [antigravityQuery.data, antigravityQuery.isError, antigravityQuery.isPending, t, theme]);
+  };
 
-  const antigravityGroups =
-    antigravityQuery.data?.status === "available" ? antigravityQuery.data.groups : [];
+  const accounts = antigravityQuery.data ?? [{ id: "antigravity", label: "Antigravity", quota: undefined }];
 
   if (visibility.loading || sidebarLayout.loading) {
     return null;
@@ -486,16 +477,6 @@ export function UsageSidebarFooterItem({
         })
       )}
 
-      {hiddenOverflowCount > 0 ? (
-        <SidebarRow
-          id="providers-more"
-          icon="Layers"
-          label={t("sidebar.moreProviders", { count: hiddenOverflowCount })}
-          active={isOnUsageScreen && !activeFocus}
-          onPress={() => openScreen({ screenId: USAGE_SCREEN_ID })}
-        />
-      ) : null}
-
       {showDeepSeek ? (
         <SidebarRow
           id="deepseek-balance"
@@ -544,40 +525,21 @@ export function UsageSidebarFooterItem({
         />
       ) : null}
 
-      {showAntigravity ? (
-        antigravityGroups.length > 0 ? (
-          antigravityGroups.map((group, index) => (
-            <SidebarRow
-              key={`agy-${index}-${group.name}`}
-              id={`antigravity-group-${index}`}
-              icon="Cpu"
-              label={shortAntigravityGroupLabel(group.name)}
-              active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.antigravity}
-              onPress={() =>
-                openScreen({
-                  screenId: USAGE_SCREEN_ID,
-                  params: { focus: EXTENDED_SOURCE_IDS.antigravity },
-                })
-              }
-              trailing={renderTrailing(buildAntigravityGroupSummary(group))}
-            />
-          ))
-        ) : (
-          <SidebarRow
-            id="antigravity-status"
-            icon="Cpu"
-            label="Antigravity"
-            active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.antigravity}
-            onPress={() =>
-              openScreen({
-                screenId: USAGE_SCREEN_ID,
-                params: { focus: EXTENDED_SOURCE_IDS.antigravity },
-              })
-            }
-            trailing={renderTrailing(antigravityFallbackSummary)}
-          />
-        )
-      ) : null}
+      {showAntigravity && accounts.map(({ id, label, quota }) => {
+        const groups = quota?.status === "available" ? quota.groups : [];
+        const focus = { screenId: USAGE_SCREEN_ID, params: { focus: id } };
+        if (!groups.length) return (
+          <SidebarRow key={id} id={id} icon="Cpu" label={label}
+            active={isOnUsageScreen && activeFocus === id} onPress={() => openScreen(focus)}
+            trailing={renderTrailing(antigravityFallbackSummary(quota))} />
+        );
+        return groups.map((group) => (
+          <SidebarRow key={id + group.name} id={id + "-" + group.name} icon="Cpu"
+            label={shortAntigravityGroupLabel(group.name).replace("AGY ", label.replace(/^Antigravity/i, "AGY") + " ")}
+            active={isOnUsageScreen && activeFocus === id} onPress={() => openScreen(focus)}
+            trailing={renderTrailing(buildAntigravityGroupSummary(group))} />
+        ));
+      })}
 
       {!hasAnyVisibleRow ? (
         <SidebarRow
