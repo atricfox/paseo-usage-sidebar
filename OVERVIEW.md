@@ -65,3 +65,7 @@ When an `openrouter` entry is present in `~/.pi/agent/auth.json`, enable **Reuse
 - Antigravity quota checks require signed-in local `agy` profile(s) and run with a 2-minute daemon cache per account between automatic refreshes. Missing or epoch sentinel reset timestamps are omitted rather than shown as imminent resets.
 - Ordinary OpenCode dollar amounts are estimated local spend calculated from token usage, not remaining upstream account balances. Free-tier OpenCode models have no published remaining-quota API.
 - DeepSeek Harness (`dsh`) consumer account login and pay-as-you-go Anthropic API keys do not expose subscription quota windows.
+
+## Disclaimer and trademarks
+
+Usage Sidebar is an independent, community-maintained plugin and is not affiliated with, endorsed by, or sponsored by Paseo, OpenAI (Codex), Anthropic (Claude), GitHub (Copilot), Google (Antigravity / Gemini), DeepSeek, OpenCode, Pi, Cursor, Kimi, MiniMax, xAI (Grok), Z.AI, OpenRouter, or any other listed provider. All third-party product names, trademarks, and monochrome icon silhouettes belong to their respective owners and are used solely for nominative identification of compatible services. Sidebar rows prefer `iconSvg` icons supplied at runtime by the connected Paseo host (`paseo.providers.snapshot()`), fall back to monochrome provider silhouettes when the host omits `iconSvg`, and use generic Lucide icons otherwise. Rights holders may request icon removal or updates at any time via the repository issue tracker.

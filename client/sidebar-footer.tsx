@@ -28,6 +28,7 @@ import {
   USAGE_SCREEN_ID,
   useAntigravityUsageQuery,
   useDeepSeekBalanceQuery,
+  useHostProviderIcons,
   useOpenCodeUsageQuery,
   usePiUsageQuery,
   useProviderUsageQuery,
@@ -70,6 +71,7 @@ export function UsageSidebarFooterItem({
   const visibility = useUsageVisibility(host.id);
   const sidebarLayout = useSidebarCollapsed();
   const providersQuery = useProviderUsageQuery(host.id);
+  const { resolveIcon } = useHostProviderIcons(host.id);
   const deepSeekQuery = useDeepSeekBalanceQuery(host.id);
   const openCodeQuery = useOpenCodeUsageQuery(host.id);
   const antigravityQuery = useAntigravityUsageQuery(host.id);
@@ -520,7 +522,7 @@ export function UsageSidebarFooterItem({
             <SidebarRow
               key={focusKey}
               id={`provider-${provider.providerId}-${index}`}
-              icon="Gauge"
+              icon={resolveIcon([provider.providerId], "Gauge")}
               label={buildRowLabel(provider, duplicateNames, index)}
               active={isOnUsageScreen && activeFocus === focusKey}
               onPress={() => openScreen({ screenId: USAGE_SCREEN_ID, params: { focus: focusKey } })}
@@ -533,7 +535,7 @@ export function UsageSidebarFooterItem({
       {showClaudeUnconfigured ? (
         <SidebarRow
           id="provider-claude-unconfigured"
-          icon="Gauge"
+          icon={resolveIcon(["claude"], "Gauge")}
           label={t("claude.title")}
           active={isOnUsageScreen && activeFocus === "claude-unconfigured"}
           onPress={() =>
@@ -552,7 +554,7 @@ export function UsageSidebarFooterItem({
       {showDeepSeek ? (
         <SidebarRow
           id="deepseek-balance"
-          icon="Wallet"
+          icon={resolveIcon(["deepseek", "dsh"], "Wallet")}
           label="DeepSeek"
           active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.deepseek}
           onPress={() =>
@@ -568,7 +570,7 @@ export function UsageSidebarFooterItem({
       {showOpenCodeGo ? (
         <SidebarRow
           id="opencode-go-quota"
-          icon="Zap"
+          icon={resolveIcon(["opencode-go", "opencode"], "Zap")}
           label="OpenCode Go"
           active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.opencodeGo}
           onPress={() =>
@@ -584,7 +586,7 @@ export function UsageSidebarFooterItem({
       {showOpenCodeLocal ? (
         <SidebarRow
           id="opencode-local-stats"
-          icon="Activity"
+          icon={resolveIcon(["opencode"], "Activity")}
           label="OpenCode"
           active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.opencode}
           onPress={() =>
@@ -600,13 +602,14 @@ export function UsageSidebarFooterItem({
       {showAntigravity && accounts.map(({ id, label, quota }) => {
         const groups = quota?.status === "available" ? quota.groups : [];
         const focus = { screenId: USAGE_SCREEN_ID, params: { focus: id } };
+        const agyIcon = resolveIcon([id, "antigravity"], "Cpu");
         if (!groups.length) return (
-          <SidebarRow key={id} id={id} icon="Cpu" label={label}
+          <SidebarRow key={id} id={id} icon={agyIcon} label={label}
             active={isOnUsageScreen && activeFocus === id} onPress={() => openScreen(focus)}
             trailing={renderTrailing(antigravityFallbackSummary(quota))} />
         );
         return groups.map((group) => (
-          <SidebarRow key={id + group.name} id={id + "-" + group.name} icon="Cpu"
+          <SidebarRow key={id + group.name} id={id + "-" + group.name} icon={agyIcon}
             label={shortAntigravityGroupLabel(group.name).replace("AGY ", label.replace(/^Antigravity/i, "AGY") + " ")}
             active={isOnUsageScreen && activeFocus === id} onPress={() => openScreen(focus)}
             trailing={renderTrailing(buildAntigravityGroupSummary(group))} />
@@ -616,7 +619,7 @@ export function UsageSidebarFooterItem({
       {showPi ? (
         <SidebarRow
           id="pi-usage"
-          icon="Terminal"
+          icon={resolveIcon(["pi"], "Terminal")}
           label="Pi"
           active={isOnUsageScreen && activeFocus === EXTENDED_SOURCE_IDS.pi}
           onPress={() =>

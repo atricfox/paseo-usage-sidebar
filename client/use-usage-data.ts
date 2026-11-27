@@ -1,9 +1,11 @@
+import { findSvgIconProblem, type PluginSvgIcon } from "@getpaseo/plugin";
 import {
   usePaseo,
   useRpc,
   useSettings,
   type PluginPaseoApi,
 } from "@getpaseo/plugin/client";
+import type { SidebarIcon } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 import { accountUsageRpc } from "../shared/antigravity";
@@ -14,6 +16,7 @@ import {
   usageSidebarDeviceLayout,
   usageSidebarSettings,
 } from "../shared/settings";
+import { findBundledProviderIcon } from "./provider-icons";
 
 export const USAGE_POLL_INTERVAL_MS = 60_000;
 export const ANTIGRAVITY_POLL_INTERVAL_MS = 120_000;
@@ -50,6 +53,43 @@ export function useProviderUsageQuery(hostId: string) {
     staleTime: 30_000,
     retry: 1,
   });
+}
+
+export function useHostProviderIcons(hostId: string) {
+  const paseo = usePaseo();
+  const query = useQuery({
+    queryKey: ["usage-sidebar", "provider-icons", hostId],
+    queryFn: async () => {
+      const snapshot = await paseo.providers.snapshot();
+      const map: Record<string, PluginSvgIcon> = {};
+      for (const entry of snapshot.entries ?? []) {
+        const svg = entry.iconSvg?.trim();
+        if (!svg || findSvgIconProblem(svg) !== null) continue;
+        map[entry.provider.toLowerCase()] = { svg };
+      }
+      return map;
+    },
+    staleTime: 5 * 60_000,
+    retry: 1,
+  });
+
+  const resolveIcon = useCallback(
+    (candidateIds: readonly string[], fallback: string): SidebarIcon => {
+      const icons = query.data;
+      if (icons) {
+        for (const id of candidateIds) {
+          const hit = icons[id.toLowerCase()];
+          if (hit) return hit;
+        }
+      }
+      const bundled = findBundledProviderIcon(candidateIds);
+      if (bundled) return bundled;
+      return fallback;
+    },
+    [query.data],
+  );
+
+  return { resolveIcon };
 }
 
 export function useDeepSeekBalanceQuery(hostId: string) {

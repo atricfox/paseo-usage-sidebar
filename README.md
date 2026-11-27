@@ -18,10 +18,10 @@ A trusted local [Paseo](https://paseo.sh) plugin that displays provider account 
 
 ## Installation
 
-Enable plugins in your Paseo daemon (**Settings → Plugins → Enable plugins**), then install `v0.2.0` from GitHub:
+Enable plugins in your Paseo daemon (**Settings → Plugins → Enable plugins**), then install `v0.2.1` from GitHub:
 
 ```bash
-paseo plugin add git:atricfox/paseo-usage-sidebar --ref v0.2.0
+paseo plugin add git:atricfox/paseo-usage-sidebar --ref v0.2.1
 ```
 
 Or install from a local checkout:
@@ -61,6 +61,12 @@ Alternatively, enable either opt-in switch in **Settings → Plugins → Usage S
 npm install
 npm run typecheck
 ```
+
+## Disclaimer & Trademarks
+
+Usage Sidebar is an independent, community-maintained open-source plugin and is not affiliated with, endorsed by, or sponsored by Paseo, OpenAI (Codex), Anthropic (Claude), GitHub (Copilot), Google (Antigravity / Gemini), DeepSeek, OpenCode, Pi, Cursor, Kimi, MiniMax, xAI (Grok), Z.AI, OpenRouter, or any other provider referenced.
+
+All third-party product names, service names, trademarks, and monochrome icon silhouettes belong to their respective owners and are used strictly for nominative identification of compatible services whose quotas or balances are displayed. At runtime, sidebar rows prefer `iconSvg` icons supplied by the connected Paseo host (`paseo.providers.snapshot()`), fall back to monochrome vector silhouettes for well-known providers, and use generic Lucide icons otherwise. If you are a rights holder and would like an icon updated or removed, please open an issue on this repository.
 
 ## License
 

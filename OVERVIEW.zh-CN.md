@@ -65,3 +65,7 @@ DeepSeek Harness（`dsh`）账号登录态暂无公开的余额查询接口。�
 - Antigravity 配额查询依赖本机已登录的 `agy` CLI 配置，自动轮询按账号采用 2 分钟服务端缓存；接口返回缺失或 epoch 哨兵重置时间时自动忽略，不再误报为即将重置。
 - 普通 OpenCode 展示的美元金额为按本地 Token 推算的已花费估算，不是上游账号剩余余额；OpenCode 免费模型无公开剩余额度接口。
 - DeepSeek Harness（`dsh`）账号登录态与按量计费的 Anthropic API Key 均不提供订阅配额窗口。
+
+## 免责声明与商标说明
+
+配额侧边栏（Usage Sidebar）为独立的社区开源插件，与 Paseo、OpenAI（Codex）、Anthropic（Claude）、GitHub（Copilot）、Google（Antigravity / Gemini）、DeepSeek、OpenCode、Pi、Cursor、Kimi、MiniMax、xAI（Grok）、Z.AI、OpenRouter 及其他涉及的服务商不存在任何官方关联、背书或赞助关系。所有第三方产品名称、商标及单色矢量轮廓图标均归其各自权利人所有，在本插件中仅用于指示性标识兼容的服务来源。侧边栏在运行时优先复用已连接 Paseo 宿主通过 `paseo.providers.snapshot()` 提供的 `iconSvg`，宿主未提供时回退至内置单色轮廓图标，其余未知来源使用通用 Lucide 图标。如相关权利人希望更新或移除对应图标，欢迎通过本仓库 Issue 联系处理。
